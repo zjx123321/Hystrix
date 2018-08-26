@@ -417,6 +417,7 @@ import java.util.concurrent.atomic.AtomicReference;
                 if (commandState.get().equals(CommandState.UNSUBSCRIBED)) {
                     return Observable.never();
                 }
+                //zjx 开始执行请求
                 return applyHystrixSemantics(_cmd);
             }
         };
@@ -521,9 +522,11 @@ import java.util.concurrent.atomic.AtomicReference;
         executionHook.onStart(_cmd);
 
         /* determine if we're allowed to execute */
+        // 判断是否有异常，或者是否走降级 降级在else中
         if (circuitBreaker.attemptExecution()) {
             final TryableSemaphore executionSemaphore = getExecutionSemaphore();
             final AtomicBoolean semaphoreHasBeenReleased = new AtomicBoolean(false);
+            // 信号量释放
             final Action0 singleSemaphoreRelease = new Action0() {
                 @Override
                 public void call() {
@@ -540,6 +543,7 @@ import java.util.concurrent.atomic.AtomicReference;
                 }
             };
 
+            // 尝试获取信号量
             if (executionSemaphore.tryAcquire()) {
                 try {
                     /* used to track userThreadExecutionTime */
@@ -633,6 +637,7 @@ import java.util.concurrent.atomic.AtomicReference;
         };
 
         Observable<R> execution;
+        // 读取是否允许超时配置
         if (properties.executionTimeoutEnabled().get()) {
             execution = executeCommandWithSpecifiedIsolation(_cmd)
                     .lift(new HystrixObservableTimeoutOperator<R>(_cmd));
@@ -647,6 +652,8 @@ import java.util.concurrent.atomic.AtomicReference;
     }
 
     private Observable<R> executeCommandWithSpecifiedIsolation(final AbstractCommand<R> _cmd) {
+
+        // 判断是线程池还是信号量
         if (properties.executionIsolationStrategy().get() == ExecutionIsolationStrategy.THREAD) {
             // mark that we are executing in a thread (even if we end up being rejected we still were a THREAD execution and not SEMAPHORE)
             return Observable.defer(new Func0<Observable<R>>() {
@@ -885,6 +892,7 @@ import java.util.concurrent.atomic.AtomicReference;
         Observable<R> userObservable;
 
         try {
+            // 真正开始准备执行，当然也只是返回一个observable
             userObservable = getExecutionObservable();
         } catch (Throwable ex) {
             // the run() method is a user provided implementation so can throw instead of using Observable.onError
